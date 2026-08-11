@@ -1,13 +1,13 @@
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "posts.db"
 
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -34,7 +34,7 @@ def init_db():
 
 def save_post(topic: str, language: str, text: str, image_url: str,
               image_prompt: str, viral_score: int, viral_reasons: list[str]) -> int:
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO posts (topic, language, text, image_url, image_prompt,
@@ -48,7 +48,7 @@ def save_post(topic: str, language: str, text: str, image_url: str,
 
 
 def update_post_status(post_id: int, status: str, text: str = None):
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     with get_conn() as conn:
         if text:
             conn.execute(

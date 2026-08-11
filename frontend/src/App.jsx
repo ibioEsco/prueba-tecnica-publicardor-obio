@@ -12,7 +12,7 @@ export default function App() {
   const [error, setError] = useState(null);
 
   const loadPosts = useCallback(async () => {
-    try { const data = await fetchPosts(); setPosts(data); } catch {}
+    try { const data = await fetchPosts(); setPosts(data); } catch (err) { setError("Could not load posts: " + err.message); }
   }, []);
 
   useEffect(() => { loadPosts(); }, [loadPosts]);
@@ -99,7 +99,7 @@ export default function App() {
             <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "0.75rem" }}>
               Current post
             </div>
-            <PostCard post={activePost} onUpdate={handlePostUpdate} />
+            <PostCard key={activePost.id} post={activePost} onUpdate={handlePostUpdate} />
           </div>
         )}
 

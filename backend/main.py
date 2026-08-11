@@ -2,8 +2,9 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Literal
 
@@ -17,11 +18,27 @@ app = FastAPI(title="LinkedIn COBOL Engine", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://localhost:3000"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type"],
 )
 
 db.init_db()
+
+VALID_TRANSITIONS = {
+    "draft": {"approved", "discarded"},
+    "approved": {"draft", "published", "simulated"},
+    "discarded": set(),
+    "published": set(),
+    "simulated": {"draft"},
+}
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal error: {type(exc).__name__}: {exc}"},
+    )
 
 
 # ── Schemas ─────────────────────────────────────────────────────────────────
@@ -98,6 +115,12 @@ async def update_post(post_id: int, req: UpdatePostRequest):
     post = db.get_post(post_id)
     if not post:
         raise HTTPException(404, "Post not found")
+    allowed = VALID_TRANSITIONS.get(post["status"], set())
+    if req.status != post["status"] and req.status not in allowed:
+        raise HTTPException(
+            400,
+            f"Cannot transition from '{post['status']}' to '{req.status}'"
+        )
     db.update_post_status(post_id, req.status, req.text)
     return db.get_post(post_id)
 

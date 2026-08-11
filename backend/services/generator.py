@@ -1,5 +1,4 @@
 import os
-import re
 import json
 import base64
 import asyncio
@@ -32,7 +31,7 @@ LANGUAGE: Write exclusively in {lang_label}.
 
 Generate the LinkedIn post now."""
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     response = await loop.run_in_executor(
         None,
         lambda: text_model.generate_content(prompt)
@@ -56,7 +55,7 @@ Create a concise, vivid image generation prompt (max 80 words) that:
 {lang_instruction}
 Return only the image prompt text, nothing else."""
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     response = await loop.run_in_executor(
         None,
         lambda: text_model.generate_content(prompt)
@@ -73,7 +72,7 @@ async def generate_image_base64(image_prompt: str) -> str | None:
         from google.generativeai import types as gtypes
         imagen_model = genai.ImageGenerationModel("imagen-3.0-generate-001")
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,
             lambda: imagen_model.generate_images(
