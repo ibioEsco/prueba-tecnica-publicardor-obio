@@ -57,6 +57,10 @@ class PublishRequest(BaseModel):
     post_id: int
 
 
+class RegenerateImageRequest(BaseModel):
+    image_prompt: str | None = None
+
+
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.post("/generate")
@@ -85,16 +89,10 @@ async def generate(req: GenerateRequest):
         viral_reasons=reasons,
     )
 
-    return {
-        "post_id": post_id,
-        "text": text,
-        "image_url": image_url,
-        "image_prompt": image_prompt,
-        "viral_score": score,
-        "viral_reasons": reasons,
-        "status": "draft",
-        "language": req.language,
-    }
+    post = db.get_post(post_id)
+    if not post:
+        raise HTTPException(500, "Failed to retrieve the generated post from database")
+    return post
 
 
 @app.get("/posts")
@@ -122,6 +120,27 @@ async def update_post(post_id: int, req: UpdatePostRequest):
             f"Cannot transition from '{post['status']}' to '{req.status}'"
         )
     db.update_post_status(post_id, req.status, req.text)
+    return db.get_post(post_id)
+
+
+@app.post("/posts/{post_id}/regenerate-image")
+async def regenerate_image(post_id: int, req: RegenerateImageRequest):
+    post = db.get_post(post_id)
+    if not post:
+        raise HTTPException(404, "Post not found")
+    if post["status"] in ("published", "discarded"):
+        raise HTTPException(400, f"Cannot regenerate the image of a '{post['status']}' post")
+
+    custom = (req.image_prompt or "").strip()
+    if custom:
+        prompt = custom
+    else:
+        # No custom prompt: derive a fresh one from the post text so the new
+        # image is a genuine alternative, not a re-roll of the same brief.
+        prompt = await generate_image_prompt(post["text"], post["language"])
+
+    image_url = await generate_image_base64(prompt)
+    db.update_post_image(post_id, image_url, prompt)
     return db.get_post(post_id)
 
 

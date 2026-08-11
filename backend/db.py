@@ -1,86 +1,131 @@
-import sqlite3
-import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent / "posts.db"
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import NullPool
+
+from models import Base, Post
+
+DEFAULT_SQLITE_URL = f"sqlite:///{Path(__file__).parent / 'posts.db'}"
 
 
-def get_conn():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
+def _database_url() -> str:
+    """Resolve DATABASE_URL, normalising it to the psycopg3 driver.
+
+    Supabase hands out `postgresql://...` (and older tooling `postgres://...`);
+    SQLAlchemy would pick psycopg2 for both, which is not installed.
+    Falls back to the local SQLite file when DATABASE_URL is unset.
+    """
+    url = os.environ.get("DATABASE_URL", "").strip()
+    if not url:
+        return DEFAULT_SQLITE_URL
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+    return url
+
+
+def _engine_kwargs(url: str) -> dict:
+    if url.startswith("sqlite"):
+        return {"connect_args": {"check_same_thread": False}}
+
+    kwargs: dict = {"pool_pre_ping": True}
+    # Supabase's transaction pooler (port 6543) multiplexes several clients onto
+    # one server connection, so it can hold neither a client-side pool nor
+    # server-side prepared statements.
+    if ":6543" in url:
+        kwargs["poolclass"] = NullPool
+        kwargs["connect_args"] = {"prepare_threshold": None}
+    return kwargs
+
+
+DATABASE_URL = _database_url()
+engine = create_engine(DATABASE_URL, **_engine_kwargs(DATABASE_URL))
+SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
 def init_db():
-    with get_conn() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS posts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                topic TEXT NOT NULL,
-                language TEXT NOT NULL DEFAULT 'en',
-                text TEXT NOT NULL,
-                image_url TEXT,
-                image_prompt TEXT,
-                viral_score INTEGER NOT NULL,
-                viral_reasons TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'draft',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-        """)
-        conn.commit()
+    Base.metadata.create_all(engine)
+
+
+def _iso(value: datetime) -> str:
+    # SQLite gives back naive datetimes even for DateTime(timezone=True).
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.isoformat()
+
+
+def _serialize(post: Post) -> dict:
+    return {
+        "id": post.id,
+        "topic": post.topic,
+        "language": post.language,
+        "text": post.text,
+        "image_url": post.image_url,
+        "image_prompt": post.image_prompt,
+        "viral_score": post.viral_score,
+        "viral_reasons": post.viral_reasons or [],
+        "status": post.status,
+        "created_at": _iso(post.created_at),
+        "updated_at": _iso(post.updated_at),
+    }
 
 
 def save_post(topic: str, language: str, text: str, image_url: str,
               image_prompt: str, viral_score: int, viral_reasons: list[str]) -> int:
-    now = datetime.now(timezone.utc).isoformat()
-    with get_conn() as conn:
-        cur = conn.execute(
-            """INSERT INTO posts (topic, language, text, image_url, image_prompt,
-               viral_score, viral_reasons, status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)""",
-            (topic, language, text, image_url, image_prompt,
-             viral_score, json.dumps(viral_reasons), now, now)
+    with SessionLocal() as session:
+        post = Post(
+            topic=topic,
+            language=language,
+            text=text,
+            image_url=image_url,
+            image_prompt=image_prompt,
+            viral_score=viral_score,
+            viral_reasons=list(viral_reasons),
+            status="draft",
         )
-        conn.commit()
-        return cur.lastrowid
+        session.add(post)
+        session.commit()
+        return post.id
+
+
+def _get(session: Session, post_id: int) -> Post | None:
+    return session.scalar(select(Post).where(Post.id == post_id))
 
 
 def update_post_status(post_id: int, status: str, text: str = None):
-    now = datetime.now(timezone.utc).isoformat()
-    with get_conn() as conn:
+    with SessionLocal() as session:
+        post = _get(session, post_id)
+        if not post:
+            return
+        post.status = status
         if text:
-            conn.execute(
-                "UPDATE posts SET status=?, text=?, updated_at=? WHERE id=?",
-                (status, text, now, post_id)
-            )
-        else:
-            conn.execute(
-                "UPDATE posts SET status=?, updated_at=? WHERE id=?",
-                (status, now, post_id)
-            )
-        conn.commit()
+            post.text = text
+        session.commit()
+
+
+def update_post_image(post_id: int, image_url: str, image_prompt: str):
+    with SessionLocal() as session:
+        post = _get(session, post_id)
+        if not post:
+            return
+        post.image_url = image_url
+        post.image_prompt = image_prompt
+        session.commit()
 
 
 def get_all_posts() -> list[dict]:
-    with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM posts ORDER BY created_at DESC"
-        ).fetchall()
-    result = []
-    for row in rows:
-        d = dict(row)
-        d["viral_reasons"] = json.loads(d["viral_reasons"])
-        result.append(d)
-    return result
+    with SessionLocal() as session:
+        posts = session.scalars(
+            select(Post).order_by(Post.created_at.desc(), Post.id.desc())
+        ).all()
+        return [_serialize(p) for p in posts]
 
 
 def get_post(post_id: int) -> dict | None:
-    with get_conn() as conn:
-        row = conn.execute("SELECT * FROM posts WHERE id=?", (post_id,)).fetchone()
-    if not row:
-        return None
-    d = dict(row)
-    d["viral_reasons"] = json.loads(d["viral_reasons"])
-    return d
+    with SessionLocal() as session:
+        post = _get(session, post_id)
+        return _serialize(post) if post else None

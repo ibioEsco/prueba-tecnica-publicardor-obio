@@ -1,7 +1,8 @@
 import { useState } from "react";
 import ViralScore from "./ViralScore";
 import StatusBadge from "./StatusBadge";
-import { updatePost, publishPost } from "../lib/api";
+import ImageLightbox from "./ImageLightbox";
+import { updatePost, publishPost, regenerateImage } from "../lib/api";
 
 const btnBase = {
   padding: "0.5rem 1rem",
@@ -19,6 +20,9 @@ export default function PostCard({ post: initialPost, onUpdate }) {
   const [editText, setEditText] = useState(initialPost.text);
   const [loading, setLoading] = useState(null);
   const [publishResult, setPublishResult] = useState(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState(false);
+  const [promptDraft, setPromptDraft] = useState(initialPost.image_prompt || "");
 
   const isTerminal = ["published", "discarded"].includes(post.status);
 
@@ -37,9 +41,15 @@ export default function PostCard({ post: initialPost, onUpdate }) {
         const result = await publishPost(post.id);
         setPublishResult(result);
         updated = { ...post, status: result.status };
+      } else if (action === "regen-image") {
+        updated = await regenerateImage(post.id, null);
+      } else if (action === "regen-image-custom") {
+        updated = await regenerateImage(post.id, promptDraft.trim());
+        setEditingPrompt(false);
       }
       if (updated) {
         setPost(updated);
+        setPromptDraft(updated.image_prompt || "");
         onUpdate?.(updated);
       }
     } catch (e) {
@@ -208,22 +218,114 @@ export default function PostCard({ post: initialPost, onUpdate }) {
         <div style={{ padding: "1.25rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
           {post.image_url && (
             <div>
-              <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.5rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              <div style={{
+                fontSize: "0.75rem", color: "var(--text-muted)", marginBottom: "0.5rem",
+                textTransform: "uppercase", letterSpacing: "0.05em",
+                display: "flex", alignItems: "center", gap: "0.5rem",
+              }}>
                 Image
+                <button
+                  onClick={() => setLightboxOpen(true)}
+                  title="View larger"
+                  style={{
+                    marginLeft: "auto", padding: "0.2rem 0.45rem",
+                    background: "transparent", border: "1px solid var(--border)",
+                    borderRadius: "var(--radius)", color: "var(--text-muted)",
+                    fontSize: "0.7rem", cursor: "pointer", textTransform: "none",
+                  }}
+                >⛶ Enlarge</button>
               </div>
-              <img
-                src={post.image_url}
-                alt="Post visual"
-                style={{ width: "100%", borderRadius: "var(--radius)", border: "1px solid var(--border)", display: "block" }}
-              />
-              <div style={{ fontSize: "0.7rem", color: "var(--text-dim)", marginTop: "0.375rem", lineHeight: 1.4 }}>
-                {post.image_prompt}
-              </div>
+
+              <button
+                onClick={() => setLightboxOpen(true)}
+                title="Click to view larger"
+                style={{
+                  display: "block", width: "100%", padding: 0,
+                  background: "transparent", border: "none", cursor: "zoom-in",
+                  position: "relative", lineHeight: 0,
+                }}
+              >
+                <img
+                  src={post.image_url}
+                  alt="Post visual"
+                  style={{
+                    width: "100%", borderRadius: "var(--radius)",
+                    border: "1px solid var(--border)", display: "block",
+                    opacity: loading?.startsWith("regen-image") ? 0.35 : 1,
+                    transition: "opacity 0.2s",
+                  }}
+                />
+                {loading?.startsWith("regen-image") && (
+                  <div style={{
+                    position: "absolute", inset: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontFamily: "monospace", fontSize: "0.75rem", color: "var(--green)",
+                  }}>▶ Regenerating…</div>
+                )}
+              </button>
+
+              {editingPrompt ? (
+                <div style={{ marginTop: "0.5rem" }}>
+                  <textarea
+                    value={promptDraft}
+                    onChange={e => setPromptDraft(e.target.value)}
+                    rows={5}
+                    placeholder="Describe the image you want…"
+                    style={{ width: "100%", padding: "0.5rem", fontSize: "0.75rem", lineHeight: 1.5, resize: "vertical" }}
+                  />
+                  <div style={{ display: "flex", gap: "0.375rem", marginTop: "0.375rem", flexWrap: "wrap" }}>
+                    <button
+                      onClick={() => handleAction("regen-image-custom")}
+                      disabled={!!loading || !promptDraft.trim()}
+                      style={{ ...btnBase, padding: "0.35rem 0.6rem", fontSize: "0.7rem", background: "var(--green-bg)", borderColor: "var(--green-dim)", color: "var(--green)" }}
+                    >
+                      {loading === "regen-image-custom" ? "Generating…" : "⟳ Generate with this prompt"}
+                    </button>
+                    <button
+                      onClick={() => { setEditingPrompt(false); setPromptDraft(post.image_prompt || ""); }}
+                      disabled={!!loading}
+                      style={{ ...btnBase, padding: "0.35rem 0.6rem", fontSize: "0.7rem", background: "transparent", borderColor: "var(--border)", color: "var(--text-muted)" }}
+                    >Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: "0.7rem", color: "var(--text-dim)", marginTop: "0.375rem", lineHeight: 1.4 }}>
+                    {post.image_prompt}
+                  </div>
+                  {!isTerminal && (
+                    <div style={{ display: "flex", gap: "0.375rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+                      <button
+                        onClick={() => handleAction("regen-image")}
+                        disabled={!!loading}
+                        title="Generate a different image for this post"
+                        style={{ ...btnBase, padding: "0.35rem 0.6rem", fontSize: "0.7rem", background: "transparent", borderColor: "var(--border)", color: "var(--text-muted)" }}
+                      >
+                        {loading === "regen-image" ? "Regenerating…" : "⟳ Regenerate"}
+                      </button>
+                      <button
+                        onClick={() => setEditingPrompt(true)}
+                        disabled={!!loading}
+                        title="Edit the image prompt before regenerating"
+                        style={{ ...btnBase, padding: "0.35rem 0.6rem", fontSize: "0.7rem", background: "transparent", borderColor: "var(--border)", color: "var(--text-muted)" }}
+                      >✎ Edit prompt</button>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
           <ViralScore score={post.viral_score} reasons={post.viral_reasons} />
         </div>
       </div>
+
+      {lightboxOpen && post.image_url && (
+        <ImageLightbox
+          src={post.image_url}
+          prompt={post.image_prompt}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
     </div>
   );
 }

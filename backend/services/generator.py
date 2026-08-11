@@ -1,16 +1,17 @@
 import os
-import json
 import base64
 import asyncio
+import logging
 from pathlib import Path
-import google.generativeai as genai
+from google import genai
+
+log = logging.getLogger(__name__)
 
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY", ""))
-
-text_model = genai.GenerativeModel("gemini-1.5-flash")
-image_model = genai.GenerativeModel("gemini-1.5-flash")
+client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
+MODEL = "gemini-3.5-flash"
+IMAGE_MODEL = "gemini-2.5-flash-image"
 
 
 def _load_voice_prompt(language: str) -> str:
@@ -19,32 +20,29 @@ def _load_voice_prompt(language: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
-async def generate_post_text(topic: str, language: str) -> str:
-    voice_prompt = _load_voice_prompt(language)
-    lang_label = "Spanish" if language == "es" else "English"
-
-    prompt = f"""{voice_prompt}
-
----
-TOPIC: {topic}
-LANGUAGE: Write exclusively in {lang_label}.
-
-Generate the LinkedIn post now."""
-
-    loop = asyncio.get_running_loop()
-    response = await loop.run_in_executor(
-        None,
-        lambda: text_model.generate_content(prompt)
+def _chat(system: str, user: str) -> str:
+    response = client.models.generate_content(
+        model=MODEL,
+        contents=user,
+        config=genai.types.GenerateContentConfig(
+            system_instruction=system,
+        ),
     )
     return response.text.strip()
 
 
-async def generate_image_prompt(post_text: str, language: str) -> str:
-    lang_instruction = "Respond in English regardless of the post language."
-    prompt = f"""You are creating an image generation prompt for a LinkedIn post about COBOL/mainframe technology.
+async def generate_post_text(topic: str, language: str) -> str:
+    voice_prompt = _load_voice_prompt(language)
+    lang_label = "Spanish" if language == "es" else "English"
 
-Post text:
-{post_text}
+    user_msg = f"TOPIC: {topic}\nLANGUAGE: Write exclusively in {lang_label}.\n\nGenerate the LinkedIn post now."
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: _chat(voice_prompt, user_msg))
+
+
+async def generate_image_prompt(post_text: str, language: str) -> str:
+    system = """You are creating an image generation prompt for a LinkedIn post about COBOL/mainframe technology.
 
 Create a concise, vivid image generation prompt (max 80 words) that:
 - Visually represents the core argument of the post
@@ -52,50 +50,41 @@ Create a concise, vivid image generation prompt (max 80 words) that:
 - Avoids generic stock photo clichés (no handshakes, no vague "technology" imagery)
 - Has a specific, concrete visual that reinforces the post's thesis
 
-{lang_instruction}
+Respond in English regardless of the post language.
 Return only the image prompt text, nothing else."""
 
     loop = asyncio.get_running_loop()
-    response = await loop.run_in_executor(
-        None,
-        lambda: text_model.generate_content(prompt)
-    )
-    return response.text.strip()
+    return await loop.run_in_executor(None, lambda: _chat(system, post_text))
 
 
 async def generate_image_base64(image_prompt: str) -> str | None:
-    """
-    Attempts to generate image via Gemini. Returns base64 data URI or None.
-    Falls back gracefully — the post is still valuable without the image.
-    """
+    loop = asyncio.get_running_loop()
     try:
-        from google.generativeai import types as gtypes
-        imagen_model = genai.ImageGenerationModel("imagen-3.0-generate-001")
-
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: imagen_model.generate_images(
-                prompt=image_prompt,
-                number_of_images=1,
-                aspect_ratio="1:1",
-            )
-        )
-        if result.images:
-            img_bytes = result.images[0]._image_bytes
-            b64 = base64.b64encode(img_bytes).decode("utf-8")
-            return f"data:image/png;base64,{b64}"
-    except Exception as e:
-        print(f"[image gen] Imagen failed: {e} — using placeholder")
-
+        result = await loop.run_in_executor(None, lambda: _generate_image(image_prompt))
+        if result:
+            return result
+    except Exception as exc:
+        log.warning("Image generation failed, using placeholder: %s", exc)
     return _placeholder_image(image_prompt)
 
 
+def _generate_image(prompt: str) -> str | None:
+    response = client.models.generate_content(
+        model=IMAGE_MODEL,
+        contents=f"Generate an image: {prompt}",
+        config=genai.types.GenerateContentConfig(
+            response_modalities=["IMAGE", "TEXT"],
+        ),
+    )
+    for part in response.candidates[0].content.parts:
+        if hasattr(part, "inline_data") and part.inline_data and part.inline_data.data:
+            mime = part.inline_data.mime_type or "image/png"
+            b64 = base64.b64encode(part.inline_data.data).decode()
+            return f"data:{mime};base64,{b64}"
+    return None
+
+
 def _placeholder_image(prompt: str) -> str:
-    """
-    Returns a deterministic SVG placeholder that references the image prompt.
-    Honest: shows what would be generated, with the prompt visible.
-    """
     short = (prompt[:80] + "...") if len(prompt) > 80 else prompt
     short_escaped = short.replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
 
@@ -103,7 +92,7 @@ def _placeholder_image(prompt: str) -> str:
   <rect width="400" height="400" fill="#0a0a0a"/>
   <rect x="20" y="20" width="360" height="360" fill="none" stroke="#00ff41" stroke-width="1" stroke-dasharray="4 2"/>
   <text x="200" y="60" font-family="monospace" font-size="11" fill="#00ff41" text-anchor="middle">[ IMAGE GENERATION PENDING ]</text>
-  <text x="200" y="85" font-family="monospace" font-size="10" fill="#00cc33" text-anchor="middle">Imagen API key required</text>
+  <text x="200" y="85" font-family="monospace" font-size="10" fill="#00cc33" text-anchor="middle">Imagen API required</text>
   <line x1="40" y1="105" x2="360" y2="105" stroke="#00ff41" stroke-width="0.5" opacity="0.4"/>
   <text x="200" y="130" font-family="monospace" font-size="9" fill="#009922" text-anchor="middle">PROMPT:</text>
   <foreignObject x="40" y="140" width="320" height="200">

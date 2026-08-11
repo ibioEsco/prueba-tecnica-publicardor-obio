@@ -26,6 +26,16 @@ export async function updatePost(id, status, text) {
   return res.json();
 }
 
+export async function regenerateImage(id, imagePrompt) {
+  const res = await fetch(`${BASE}/posts/${id}/regenerate-image`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ image_prompt: imagePrompt || null }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function publishPost(id) {
   const res = await fetch(`${BASE}/posts/${id}/publish`, { method: "POST" });
   if (!res.ok) throw new Error(await res.text());
