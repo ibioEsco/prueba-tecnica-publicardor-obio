@@ -1,4 +1,6 @@
-const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// URL del backend. Se define por entorno en .env.development / .env.production
+// (ver frontend/.env.example). Se quita la barra final para no generar "//generate".
+export const BASE = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 export async function generatePost(topic, language) {
   const res = await fetch(`${BASE}/generate`, {
