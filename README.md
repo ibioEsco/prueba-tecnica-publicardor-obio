@@ -76,3 +76,12 @@ linkedin-cobol-engine/
         │   └── History.jsx    # Tabla de historial
         └── lib/api.js
 ```
+
+## Qué haría con una semana adicional
+
+1. **Feedback loop** — registrar qué posts aprueba JLB vs descarta para ajustar el scorer con datos reales en lugar de heurísticas.
+2. **Fuentes de ideas automáticas** — conectar Hacker News API, LinkedIn trending topics y RSS de blogs de mainframe para sugerir temas sin input manual.
+3. **Múltiples variantes** — generar 3 versiones por tema con distintos hooks, presentar las 3 con scores comparativos.
+4. **Scheduler** — publicación automática en horario óptimo (martes/miércoles 8-10am hora del autor) con Celery o APScheduler.
+5. **Editor de voz** — interfaz para que JLB agregue sus propias publicaciones como ejemplos, refinando el system prompt sin tocar código.
+6. **Analytics simulados** — mock de engagement proyectado basado en score, para dar contexto al número sin inventar datos reales.
