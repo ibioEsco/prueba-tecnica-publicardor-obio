@@ -5,6 +5,7 @@ Motor de contenido autónomo para generar y publicar posts de LinkedIn dirigidos
 ## Requisitos
 
 - Python 3.11+
+- [uv](https://docs.astral.sh/uv/) (gestor de paquetes Python)
 - Node.js 18+
 - Gemini API key
 
@@ -15,8 +16,8 @@ Motor de contenido autónomo para generar y publicar posts de LinkedIn dirigidos
 cd backend
 cp .env.example .env
 # Editar .env y poner tu GEMINI_API_KEY
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+uv sync
+uv run uvicorn main:app --reload --port 8000
 
 # 2. Frontend (nueva terminal)
 cd frontend
