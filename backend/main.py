@@ -1,0 +1,135 @@
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import Literal
+
+import db
+from services.generator import generate_post_text, generate_image_prompt, generate_image_base64
+from services.scorer import score_post
+from services.linkedin import publish_to_linkedin
+
+app = FastAPI(title="LinkedIn COBOL Engine", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+db.init_db()
+
+
+# ── Schemas ─────────────────────────────────────────────────────────────────
+
+class GenerateRequest(BaseModel):
+    topic: str
+    language: Literal["en", "es"] = "en"
+
+
+class UpdatePostRequest(BaseModel):
+    status: Literal["approved", "discarded", "draft"]
+    text: str | None = None
+
+
+class PublishRequest(BaseModel):
+    post_id: int
+
+
+# ── Routes ───────────────────────────────────────────────────────────────────
+
+@app.post("/generate")
+async def generate(req: GenerateRequest):
+    if not req.topic.strip():
+        raise HTTPException(400, "Topic cannot be empty")
+
+    # 1. Generate post text
+    text = await generate_post_text(req.topic, req.language)
+
+    # 2. Score the post
+    score, reasons = score_post(text, req.language)
+
+    # 3. Generate image prompt + image (parallel-ish)
+    image_prompt = await generate_image_prompt(text, req.language)
+    image_url = await generate_image_base64(image_prompt)
+
+    # 4. Persist
+    post_id = db.save_post(
+        topic=req.topic,
+        language=req.language,
+        text=text,
+        image_url=image_url,
+        image_prompt=image_prompt,
+        viral_score=score,
+        viral_reasons=reasons,
+    )
+
+    return {
+        "post_id": post_id,
+        "text": text,
+        "image_url": image_url,
+        "image_prompt": image_prompt,
+        "viral_score": score,
+        "viral_reasons": reasons,
+        "status": "draft",
+        "language": req.language,
+    }
+
+
+@app.get("/posts")
+async def list_posts():
+    return db.get_all_posts()
+
+
+@app.get("/posts/{post_id}")
+async def get_post(post_id: int):
+    post = db.get_post(post_id)
+    if not post:
+        raise HTTPException(404, "Post not found")
+    return post
+
+
+@app.patch("/posts/{post_id}")
+async def update_post(post_id: int, req: UpdatePostRequest):
+    post = db.get_post(post_id)
+    if not post:
+        raise HTTPException(404, "Post not found")
+    db.update_post_status(post_id, req.status, req.text)
+    return db.get_post(post_id)
+
+
+@app.post("/posts/{post_id}/publish")
+async def publish_post(post_id: int):
+    post = db.get_post(post_id)
+    if not post:
+        raise HTTPException(404, "Post not found")
+    if post["status"] == "published":
+        raise HTTPException(400, "Post already published")
+
+    result = await publish_to_linkedin(
+        post_text=post["text"],
+        image_data_uri=post["image_url"],
+        author_urn=os.environ.get("LINKEDIN_AUTHOR_URN"),
+    )
+
+    new_status = "published" if (result.success and not result.simulated) else "simulated"
+    db.update_post_status(post_id, new_status)
+
+    return {
+        "status": new_status,
+        "simulated": result.simulated,
+        "post_url": result.post_url,
+        "payload_preview": result.payload_preview,
+        "error": result.error,
+        "required_scopes": result.required_scopes,
+        "setup_instructions": result.setup_instructions,
+    }
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "version": "0.1.0"}
