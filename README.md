@@ -1,67 +1,78 @@
-# Prueba técnica (24 horas): motor de contenido para LinkedIn
+# LinkedIn COBOL Engine
 
-**Candidato:** Obio
+Motor de contenido autónomo para generar y publicar posts de LinkedIn dirigidos a desarrolladores COBOL y profesionales de mainframe, con la voz de Juan Lucas Barbier.
 
-## Contexto
+## Requisitos
 
-Juan Lucas Barbier quiere publicar contenido breve, relevante y visual en LinkedIn para desarrolladores COBOL y personas que trabajan con mainframes, sistemas legacy y arquitectura de software.
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/) (gestor de paquetes Python)
+- Node.js 18+
+- Gemini API key
 
-Los territorios iniciales pueden incluir la modernización de mainframes, la aplicación de IA a sistemas legacy, decisiones de arquitectura y la cultura técnica alrededor de estos sistemas. No te entregamos un producto previo, un repositorio, una guía de voz ni una especificación cerrada.
+## Setup en 4 pasos
 
-Queremos ver cómo conviertes una necesidad de producto ambigua en algo real, útil y demostrable.
+```bash
+# 1. Backend
+cd backend
+cp .env.example .env
+# Editar .env y poner tu GEMINI_API_KEY
+uv sync
+uv run uvicorn main:app --reload --port 8000
 
-## El desafío
+# 2. Frontend (nueva terminal)
+cd frontend
+npm install
+npm run dev
+# Abre http://localhost:5173
+```
 
-Durante las próximas 24 horas, construye desde cero una primera versión funcional de un producto que permita crear y publicar contenido de LinkedIn de forma autónoma.
+## Flujo completo
 
-El producto debe ser capaz de transformar una idea, un tema o un disparador que tú definas en una publicación corta dirigida a esta audiencia. La publicación debe reflejar una primera interpretación razonable de la voz de Juan Lucas Barbier, incluir una imagen pertinente y mostrar una predicción o señal de potencial de viralidad.
+1. **Ingresa un tema** en el campo de texto (EN o ES)
+2. **El motor genera** — post con voz JLB + prompt de imagen + score de viralidad
+3. **Revisa el post** — texto, imagen generada, score con razones
+4. **Decide** — Aprobar / Editar inline / Descartar / Regenerar
+5. **Publica** — real (con token OAuth) o simulado (honestamente etiquetado)
+6. **Historial** — estado visible de cada pieza: draft, approved, discarded, published, simulated
 
-El resultado no debe ser una colección de pantallas o funcionalidades aisladas. Queremos poder recorrer un flujo completo y comprobar cómo una idea se convierte en contenido listo para publicar, cómo se evalúa y cómo llega —o llegaría de forma fiel— a LinkedIn.
+## Variables de entorno
 
-## Lo que debe resolver el producto
+| Variable | Requerida | Descripción |
+|---|---|---|
+| `GEMINI_API_KEY` | ✓ | API key de Google AI Studio |
+| `LINKEDIN_ACCESS_TOKEN` | Opcional | Token OAuth para publicación real |
+| `LINKEDIN_AUTHOR_URN` | Opcional | `urn:li:person:<id>` del autor |
 
-Decide qué experiencia tiene más sentido, pero tu producto debe resolver estos resultados:
+Sin `LINKEDIN_ACCESS_TOKEN`, todas las publicaciones se ejecutan en modo simulado — se muestra el payload exacto que se enviaría, y el post queda marcado como `simulated` (nunca como `published`).
 
-- Crear posts cortos que se sientan escritos para desarrolladores COBOL y profesionales de mainframes, no copy genérico de IA.
-- Definir una voz inicial para Juan Lucas Barbier sin recibir ejemplos previos. Puedes investigar, inferir o proponer una hipótesis; deja claro solo los supuestos que cambien de forma importante el producto.
-- Incorporar una imagen que refuerce la tesis del post. La imagen debe aportar al contenido, no ser un adorno intercambiable.
-- Producir una señal de viralidad útil. No esperamos una predicción científica ni datos históricos que no existen; sí esperamos una hipótesis clara sobre qué podría funcionar y que esa señal influya en una decisión real del flujo: qué publicar, qué mejorar, qué descartar o qué regenerar.
-- Resolver la publicación automática en LinkedIn. No se facilitarán credenciales de empresa ni se espera que uses una cuenta personal. Decide cómo demostrar de forma honesta y convincente ese último paso y qué sería necesario para habilitarlo en una cuenta real.
-- Hacer visible qué ocurrió con cada pieza de contenido: por ejemplo, si quedó como borrador, fue seleccionada, se descartó, se publicó o se simuló una publicación. Una simulación nunca debe presentarse como una publicación real.
+## Publicación real en LinkedIn
 
-El idioma, la interfaz, el flujo, la frecuencia de publicación, las fuentes de ideas, el nivel de automatización y todas las decisiones técnicas son tuyas.
+1. Crear app en https://www.linkedin.com/developers/
+2. Solicitar productos: "Share on LinkedIn" + "Sign In with LinkedIn"
+3. Generar token OAuth 2.0 con scopes: `r_liteprofile`, `w_member_social`
+4. Agregar a `.env`: `LINKEDIN_ACCESS_TOKEN=<token>`
 
-## Lo que entregas
+## Estructura
 
-Entrega un producto que funcione. Una propuesta, una presentación, un Figma o una descripción de arquitectura no sustituyen una implementación ejecutable.
-
-La entrega debe incluir:
-
-- Un repositorio con el producto.
-- Un README breve que permita ejecutarlo o recorrer la demostración principal.
-- Una nota corta con las decisiones y supuestos que afectaron materialmente al producto.
-- Una explicación breve de qué harías después si tuvieras una semana adicional.
-
-Puedes incluir una URL desplegada o un vídeo corto si facilita la revisión, pero no es obligatorio. La revisión no aportará claves, cuentas de LinkedIn ni contenido adicional para completar la demostración.
-
-## Cómo trabajar
-
-Tienes 24 horas desde que recibes esta consigna.
-
-Puedes usar el lenguaje, framework, modelos, proveedores, herramientas y nivel de automatización que consideres adecuados. Puedes usar herramientas de IA durante el desarrollo. No habrá una ronda adicional de aclaraciones: cuando el problema no defina una decisión, eres responsable de tomarla, priorizar y avanzar.
-
-No buscamos una arquitectura perfecta, una plataforma completa ni una respuesta “correcta”. Buscamos un producto pequeño que funcione, con creatividad, criterio de producto y una ejecución rápida bajo incertidumbre.
-
-## Qué valoraremos
-
-Nos importará especialmente:
-
-- Que exista un flujo completo y demostrable, no solo una idea bien explicada.
-- La calidad, relevancia y especificidad del contenido para la audiencia COBOL/mainframe.
-- Que la voz, la imagen y la predicción de viralidad tengan una función real dentro del producto.
-- Cómo transformaste una necesidad abierta en decisiones de producto concretas.
-- Tu capacidad para priorizar, recortar alcance y entregar algo convincente en poco tiempo.
-- La claridad, honestidad y calidad general de la entrega.
-
-Construye la versión más pequeña que haga que alguien quiera seguir usándola.
-
+```
+linkedin-cobol-engine/
+├── backend/
+│   ├── main.py              # FastAPI app
+│   ├── db.py                # SQLite (posts)
+│   ├── services/
+│   │   ├── generator.py     # Gemini text + image
+│   │   ├── scorer.py        # Viral score heurístico
+│   │   └── linkedin.py      # Publisher real/simulado
+│   └── prompts/
+│       ├── voice_jlb_en.txt # System prompt voz JLB (inglés)
+│       └── voice_jlb_es.txt # System prompt voz JLB (español)
+└── frontend/
+    └── src/
+        ├── App.jsx
+        ├── components/
+        │   ├── PostCard.jsx   # Card de revisión + acciones
+        │   ├── ViralScore.jsx # Score visual con razones
+        │   ├── StatusBadge.jsx
+        │   └── History.jsx    # Tabla de historial
+        └── lib/api.js
+```

@@ -1,0 +1,62 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0d0d0d;
+  --surface: #161616;
+  --surface-2: #1e1e1e;
+  --border: #2a2a2a;
+  --border-hover: #3a3a3a;
+  --text: #e8e8e6;
+  --text-muted: #888884;
+  --text-dim: #555550;
+  --green: #00ff41;
+  --green-dim: #00cc33;
+  --green-bg: rgba(0,255,65,0.06);
+  --amber: #f59e0b;
+  --amber-bg: rgba(245,158,11,0.08);
+  --red: #ef4444;
+  --red-bg: rgba(239,68,68,0.08);
+  --blue: #3b82f6;
+  --radius: 8px;
+  --radius-lg: 12px;
+  font-size: 15px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', 'SF Pro Text', system-ui, sans-serif;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: var(--radius);
+  padding: 0.5rem 1rem;
+  transition: all 0.15s;
+}
+
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+input, textarea, select {
+  font-family: inherit;
+  font-size: 0.9375rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s;
+}
+input:focus, textarea:focus, select:focus { border-color: var(--green-dim); }
+
+select option { background: var(--surface-2); }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 3px; }
